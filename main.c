@@ -23,9 +23,23 @@
 #define I2C_CLOCK_FREQ              5000 //Originally 5000
 
 #define GYRO_I2C_BUS              I2C1
-#define GYRO_ADDRESS              0x69 //GYRO 0x69, ACCELEROMETER 0x53, 
+#define GYRO_ADDRESS              0x69 //GYRO 0x69, ACCELEROMETER 0x53,
+#define CTRL_REG_1                0x20
+#define CTRL_REG_2                0x21
+#define CTRL_REG_3                0x22
+#define CTRL_REG_4                0x23
+#define CTRL_REG_5                0x24
+
+#define DATA_CTRL_REG1            0x0F  
+#define DATA_CTRL_REG2            0x00
+#define DATA_CTRL_REG3            0x08
+#define DATA_CTRL_REG4_250        0x00
+#define DATA_CTRL_REG4_500        0x10
+#define DATA_CTRL_REG4Default    0x30
 
 INT8 readFromI2C(UINT8 AddrByte, UINT8 ICAddr);
+void writeFromI2C(UINT8 AddrByte, UINT8 ICAddr, UINT8 DatatoWrite);
+void delayCycles(int numberofcycles);
 /*******************************************************************************
   Function:
     BOOL StartTransfer( BOOL restart )
@@ -188,7 +202,6 @@ int main(int argc, char** argv) {
     I2C_7_BIT_ADDRESS   SlaveAddress;
    
     UINT32              actualClock;
-    BOOL                Acknowledged;
 
     
     OpenUART1(UART_EN, UART_TX_ENABLE, 1); // enable UART1
@@ -196,7 +209,7 @@ int main(int argc, char** argv) {
     SYSTEMConfigPerformance(SYS_CLOCK);
     
     
-    OpenTimer2( T2_ON | T2_SOURCE_INT | T2_PS_1_8, 0xFFFF);
+    OpenTimer2( T2_ON | T2_SOURCE_INT | T2_PS_1_32, 0xFFFF);
         // This statement says: turn on timer2 | have it use an internal clock source | have it
         // use a prescaler of 1:256, and use a period of 0xFFFF or 2^16 cycles
  
@@ -224,7 +237,18 @@ int main(int argc, char** argv) {
     // Enable the I2C bus
     I2CEnable(GYRO_I2C_BUS, TRUE);
     
-
+    writeFromI2C(CTRL_REG_1, GYRO_ADDRESS, DATA_CTRL_REG1); // Enable x, y, z and turn off power down
+    //writeFromI2C(CTRL_REG_2, GYRO_ADDRESS, DATA_CTRL_REG2);// If you'd like to adjust/use the HPF, you can edit this line to configure CTRL_REG2
+    
+    // Configure CTRL_REG3 to generate data ready interrupt on INT2
+  // No interrupts used on INT1, if you'd like to configure INT1
+  // or INT2 otherwise, consult the datasheet:
+   // writeFromI2C(CTRL_REG_3, GYRO_ADDRESS, DATA_CTRL_REG3);
+    
+    //writeFromI2C(CTRL_REG_4, GYRO_ADDRESS, DATA_CTRL_REG4_500);
+    
+    delayCycles(1500);
+    
     while(1) //Infinite Loop
     {
         //printf("Inside Infinite loop\n");
@@ -233,7 +257,15 @@ int main(int argc, char** argv) {
     return (EXIT_SUCCESS);
 }
 
-
+void delayCycles(int numberofcycles)
+{
+    int count = 0;
+    do
+    {
+        count++;
+        Nop();
+    }while (count != numberofcycles);
+}
 // Timer2 Interrupt Service Routine
 void __ISR(_TIMER_2_VECTOR, ipl2) handlesTimer2Ints(void){
         // **make sure iplx matches the timer?s interrupt priority level
@@ -251,7 +283,7 @@ void __ISR(_TIMER_2_VECTOR, ipl2) handlesTimer2Ints(void){
         
         XLOWER = readFromI2C(i2cData[2], GYRO_ADDRESS);
    
-        x = ((XUPPER << 8) | XLOWER);
+        x = XUPPER;
         
         printf("X axis = %d\n", x);
         
@@ -358,4 +390,91 @@ INT8 readFromI2C(UINT8 AddrByte, UINT8 ICAddr)
         }
         
         return i2cbyte;
+}
+
+void writeFromI2C(UINT8 AddrByte, UINT8 ICAddr, UINT8 DatatoWrite)
+{
+     int Index;
+     int  DataSz;
+     UINT8 i2cData[10];
+     I2C_7_BIT_ADDRESS   SlaveAddress;
+     BOOL Success = TRUE;
+     BOOL Acknowledged;
+     INT8 i2cbyte;
+    
+      // Initialize the data buffer
+        I2C_FORMAT_7_BIT_ADDRESS(SlaveAddress, ICAddr, I2C_WRITE);
+        i2cData[0] = SlaveAddress.byte;
+        i2cData[1] = AddrByte;              // IMU location to read (high address byte)
+        i2cData[2] = DatatoWrite;              // Data to write
+        DataSz = 3;
+     
+     
+        // Start the transfer to write data to the EEPROM
+    if( !StartTransfer(FALSE) )
+    {
+        while(1);
+    }
+
+    // Transmit all data
+    Index = 0;
+    while( Success && (Index < DataSz) )
+    {
+        // Transmit a byte
+        if (TransmitOneByte(i2cData[Index]))
+        {
+            // Advance to the next byte
+            Index++;
+
+            // Verify that the byte was acknowledged
+            if(!I2CByteWasAcknowledged(GYRO_I2C_BUS))
+            {
+                DBPRINTF("Error: Sent byte was not acknowledged\n");
+                Success = FALSE;
+            }
+        }
+        else
+        {
+            Success = FALSE;
+        }
+    }
+
+    // End the transfer (hang here if an error occured)
+    StopTransfer();
+    if(!Success)
+    {
+        while(1);
+    }
+
+
+    // Wait for EEPROM to complete write process, by polling the ack status.
+    Acknowledged = FALSE;
+    do
+    {
+        // Start the transfer to address the EEPROM
+        if( !StartTransfer(FALSE) )
+        {
+            while(1);
+        }
+        
+        // Transmit just the EEPROM's address
+        if (TransmitOneByte(SlaveAddress.byte))
+        {
+            // Check to see if the byte was acknowledged
+            Acknowledged = I2CByteWasAcknowledged(GYRO_I2C_BUS);
+        }
+        else
+        {
+            Success = FALSE;
+        }
+
+        // End the transfer (stop here if an error occured)
+        StopTransfer();
+        if(!Success)
+        {
+            while(1);
+        }
+
+    } while (Acknowledged != TRUE);
+
 }
