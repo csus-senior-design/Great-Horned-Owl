@@ -248,7 +248,7 @@ int main(int argc, char** argv) {
     //writeFromI2C(CTRL_REG_4, GYRO_ADDRESS, DATA_CTRL_REG4_500);
     
     delayCycles(1500);
-    
+   
     while(1) //Infinite Loop
     {
         //printf("Inside Infinite loop\n");
@@ -283,7 +283,7 @@ void __ISR(_TIMER_2_VECTOR, ipl2) handlesTimer2Ints(void){
         
         XLOWER = readFromI2C(i2cData[2], GYRO_ADDRESS);
    
-        x = XUPPER;
+        x = XLOWER | (XUPPER << 8); //Concatenates the 2 bytes together
         
         printf("X axis = %d\n", x);
         
