@@ -17,11 +17,13 @@
 #elif defined (__32MX220F032D__) || defined (__32MX250F128D__)
 #define SYS_CLOCK (40000000L)
 #endif
+//Information related to MAX32 System
 #define GetSystemClock()            (SYS_CLOCK)
 #define GetPeripheralClock()        (SYS_CLOCK/2) //origianlly 2
 #define GetInstructionClock()       (SYS_CLOCK)
 #define I2C_CLOCK_FREQ              5000 //Originally 5000
 
+//Information related to GYRO IC
 #define GYRO_I2C_BUS              I2C1
 #define GYRO_ADDRESS              0x69 //GYRO 0x69, ACCELEROMETER 0x53,
 #define CTRL_REG_1                0x20
@@ -29,13 +31,26 @@
 #define CTRL_REG_3                0x22
 #define CTRL_REG_4                0x23
 #define CTRL_REG_5                0x24
+#define XUPPER_REG                0x28      
+#define XLOWER_REG                0x29
+#define YUPPER_REG                0x2B
+#define YLOWER_REG                0x2A
+#define ZUPPER_REG                0x2D
+#define ZLOWER_REG                0x2C
 
+//Config Settings for GYRO
 #define DATA_CTRL_REG1            0x0F  
 #define DATA_CTRL_REG2            0x00
 #define DATA_CTRL_REG3            0x08
 #define DATA_CTRL_REG4_250        0x00
 #define DATA_CTRL_REG4_500        0x10
 #define DATA_CTRL_REG4Default    0x30
+
+//GRYO DSP Constants
+#define SAMPLE_RATE_GYRO          100
+#define OFFSET_GYRO               136
+#define SENSITIVITY_GYRO          5.5
+
 
 INT8 readFromI2C(UINT8 AddrByte, UINT8 ICAddr);
 void writeFromI2C(UINT8 AddrByte, UINT8 ICAddr, UINT8 DatatoWrite);
@@ -195,8 +210,9 @@ void StopTransfer( void )
     } while ( !(status & I2C_STOP) );
 }
 
-INT8 XLOWER, XUPPER;
-int x;
+INT8 XLOWER, XUPPER, YLOWER, YUPPER, ZLOWER, ZUPPER;
+int xrate, yrate, zrate;
+float xangle, yangle, zangle;
 
 int main(int argc, char** argv) {
     I2C_7_BIT_ADDRESS   SlaveAddress;
@@ -248,7 +264,7 @@ int main(int argc, char** argv) {
     //writeFromI2C(CTRL_REG_4, GYRO_ADDRESS, DATA_CTRL_REG4_500);
     
     delayCycles(1500);
-   
+    printf("X,Y,Z (Degrees per Second)");
     while(1) //Infinite Loop
     {
         //printf("Inside Infinite loop\n");
@@ -272,23 +288,25 @@ void __ISR(_TIMER_2_VECTOR, ipl2) handlesTimer2Ints(void){
         UINT8 i2cData[10];
         INT8 i2cbyte;
         
-        LATAINV = 0x0008;
-        // This statement looks at pin RA3, and latches RA3 the inverse of the current state.
-        // In other words, it toggles the LED that is attached to RA3
+        LATAINV = 0x0008; //Make the LED Blink when Timer INT code runs
         
-        i2cData[1] = 0x28;              // IMU location to read (high address byte) 28
-        i2cData[2] = 0x29;              // IMU location to read (low address byte) 29
-        
-        XUPPER = readFromI2C(i2cData[1], GYRO_ADDRESS);
-        
-        XLOWER = readFromI2C(i2cData[2], GYRO_ADDRESS);
+        //Grab X,Y,Z rotational data from gyro
+        XUPPER = readFromI2C(XUPPER_REG, GYRO_ADDRESS);      
+        XLOWER = readFromI2C(XLOWER_REG, GYRO_ADDRESS);
    
-        x = XLOWER | (XUPPER << 8); //Concatenates the 2 bytes together
+        YUPPER = readFromI2C(YUPPER_REG, GYRO_ADDRESS);
+        YLOWER = readFromI2C(XLOWER_REG, GYRO_ADDRESS);
+                
+        ZUPPER = readFromI2C(ZUPPER_REG, GYRO_ADDRESS);
+        ZLOWER = readFromI2C(ZLOWER_REG, GYRO_ADDRESS);
         
-        printf("X axis = %d\n", x);
+        xrate = XLOWER | (XUPPER << 8); //Concatenates the 2 bytes together
+        yrate = YLOWER | (YUPPER << 8);
+        zrate = ZLOWER | (ZUPPER << 8);
         
-        mT2ClearIntFlag();
-        // Clears the interrupt flag so that the program returns to the main loop
+        printf("%d,%d,%d\n", xrate, yrate, zrate);
+        
+        mT2ClearIntFlag(); // Clears the interrupt flag so that the program returns to the main loop
 } // END Timer2 ISR
 
 INT8 readFromI2C(UINT8 AddrByte, UINT8 ICAddr)
