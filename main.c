@@ -307,7 +307,9 @@ void __ISR(_TIMER_2_VECTOR, ipl2) handlesTimer2Ints(void){
         zrate = ZLOWER | (ZUPPER << 8);
         
         //Calculate the Angles of the axis
-        
+        xangle += xrate / SAMPLE_RATE_GYRO;
+        yangle += yrate / SAMPLE_RATE_GYRO;
+        zangle += zrate / SAMPLE_RATE_GYRO;
         
         printf("%d,%d,%d\n", xrate, yrate, zrate);
         
