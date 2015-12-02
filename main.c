@@ -212,7 +212,9 @@ void StopTransfer( void )
 
 INT8 XLOWER, XUPPER, YLOWER, YUPPER, ZLOWER, ZUPPER;
 int xrate, yrate, zrate;
-float xangle, yangle, zangle;
+float xangle = 0.0;
+float yangle = 0.0;
+float zangle = 0.0;
 
 int main(int argc, char** argv) {
     I2C_7_BIT_ADDRESS   SlaveAddress;
@@ -303,6 +305,9 @@ void __ISR(_TIMER_2_VECTOR, ipl2) handlesTimer2Ints(void){
         xrate = XLOWER | (XUPPER << 8); //Concatenates the 2 bytes together
         yrate = YLOWER | (YUPPER << 8);
         zrate = ZLOWER | (ZUPPER << 8);
+        
+        //Calculate the Angles of the axis
+        
         
         printf("%d,%d,%d\n", xrate, yrate, zrate);
         
